@@ -1,0 +1,2 @@
+1. Exclude XLD beacause of absent UTF-8 support
+2. Exclude audiotools, use simple parser

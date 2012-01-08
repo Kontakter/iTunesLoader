@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import audiotools.cue
+import cue_parser
+from util import run, remove_file
 
 import os
 import string
 import optparse
-import subprocess
 
 LOCATION = os.path.dirname(os.path.realpath(__file__))
 ADD_SONG = os.path.join(LOCATION, "upload_file_to_itunes.applescript")
@@ -15,28 +15,17 @@ SET_TAG = os.path.join(LOCATION, "set_tags_to_last_song.applescript")
 AUDIO_EXT = ["flac", "m4a", "mp3", "ape", "wav", "aiff"]
 PLAYLIST_EXT = ["cue", "pls", "m3u"]
 
-def run(command):
-    print "RUNNING:", command
-    proc = subprocess.Popen(command, shell=True)
-    proc.communicate()
-
-def remove_file(filename):
-    print "Removing file", filename
-    os.remove(filename)
-
 class Cue(object):
     # TODO: exclude using of audiotools
     def __init__(self, filename):
         self.filename = filename
-        with open(filename) as f:
-            cue = audiotools.cue.parse(audiotools.cue.tokens(f.read()))
-        self.artist = cue.attribs["PERFORMER"]
-        self.album = cue.attribs["TITLE"]
-        for line in open(filename):
-            if line.find("REM GENRE") != -1:
-                self.genre = line.replace("REM GENRE ", "").strip().strip("'\"")
-        self.track_count = len(cue.tracks)
-        self.tracks = [cue.tracks[i].attribs["TITLE"] for i in xrange(1, self.track_count + 1)]
+        cue = cue_parser.parse(filename)
+        self.artist = cue["disk_info"].get("PERFORMER", "")
+        self.album = cue["disk_info"].get("TITLE", "")
+        self.genre = cue["disk_info"].get("REM", {}).get("GENRE", "")
+        self.year = cue["disk_info"].get("REM", {}).get("DATE", "")
+        self.track_count = len(cue["tracks"])
+        self.tracks = [cue["tracks"][i].get("TITLE", "") for i in xrange(self.track_count)]
 
     def find_track(self, name):
         if name[0] in string.digits and name[1] in string.digits:
@@ -85,7 +74,7 @@ def process_dir(files, only_add, delete, ignore_cue):
         if cue is not None:
             name = os.path.splitext(os.path.basename(filename))[0]
             run('osascript %(bin)s '
-                '"%(track)s" "%(artist)s" "%(album)s" "%(genre)s" "%(name)s" "%(track_count)d" "%(track_index)d"' %
+                '"%(track)s" "%(artist)s" "%(album)s" "%(genre)s" "%(name)s" "%(track_count)d" "%(track_index)d" "%(year)s"' %
                 {"bin": SET_TAG,
                  "track": name,
                  "artist": cue.artist,
@@ -93,10 +82,12 @@ def process_dir(files, only_add, delete, ignore_cue):
                  "genre": getattr(cue, "genre", ""),
                  "name": cue.getname(name),
                  "track_count": cue.track_count,
-                 "track_index": cue.track_index(name)})
+                 "track_index": cue.track_index(name),
+                 "year": cue.year})
 
     extensions = [extract_extension(f) for f in files]
     audio_files = filter(lambda f: extract_extension(f) in AUDIO_EXT, files)
+    print "AUDIO FILES", audio_files
     audio_ext = set(filter(AUDIO_EXT.__contains__, extensions))
     playlist_ext = filter(PLAYLIST_EXT.__contains__, extensions)
     if len(audio_ext) != 1:
@@ -114,7 +105,7 @@ def process_dir(files, only_add, delete, ignore_cue):
         cue = Cue(filter(lambda x: extract_extension(x) == "cue", files)[0])
         if len(audio_files) != cue.track_count and len(audio_files) != 1:
             print "Error: number of audio files differ from number of tracks, "\
-                  "ignoring this path."
+                  "ignoring this path, %d %d " % (len(audio_files), cue.track_count)
             return
 
         if len(audio_files) == 1:
@@ -122,7 +113,7 @@ def process_dir(files, only_add, delete, ignore_cue):
                 print "Error: wrong extension %s. It is not supported with cue. "\
                       "Ignoring this path."
                 return
-            run("xld -c '%s' -f wav '%s'" % (cue.filename, audio_files[0]))
+            run("xld -c \"%s\" -f wav \"%s\"" % (cue.filename, audio_files[0]))
             if delete:
                 remove_file(audio_files[0])
             audio_files = [f for f in os.listdir(".") if extract_extension(f) == "wav"]
@@ -133,24 +124,24 @@ def process_dir(files, only_add, delete, ignore_cue):
         elif not only_add:
             basename, _ = os.path.splitext(f)
             target_file = basename + ".m4a"
-            run("ffmpeg -i '%s' -acodec alac '%s'" % (f, target_file))
+            run("ffmpeg -i \"%s\" -acodec alac \"%s\"" % (f, target_file))
             files_to_add.append(target_file)
             if delete:
                 remove_file(f)
 
     for f in files_to_add:
         add_file_to_itunes(f, cue)
-    if delete and cue is not None:
-        remove_file(cue.filename)
+    #if delete and cue is not None:
+    #    remove_file(cue.filename)
 
 if __name__ == "__main__":
     parser = optparse.OptionParser(
         description="Convert audio and add to iTunes."
                     "Supported formats: flac, m4a, mp3, ape."
                     "Also cue playlists are supported.")
-    parser.add_option("--path, -p", type=str, dest="path",
+    parser.add_option("--path,-p", type=str, dest="path",
                       help="Path to folder with album. It is required.")
-    parser.add_option("--delete, -d", action="store_true", dest="delete", default=False,
+    parser.add_option("--delete,-d", action="store_true", dest="delete", default=False,
                       help="Set this option for deletion old file in conversion case.")
     parser.add_option("--only-add, -o", dest="only_add",
                       action="store_true", default=False,

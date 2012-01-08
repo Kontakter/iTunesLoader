@@ -6,6 +6,7 @@ on run args
     set track_name to (item 5 of args)
     set track_count to (item 6 of args)
     set track_index to (item 7 of args)
+    set year_number to (item 8 of args)
     tell application "iTunes"
         set oldfi to fixed indexing
         set fixed indexing to true
@@ -16,6 +17,7 @@ on run args
         set genre of t to genre_name
         set track count of t to track_count
         set track number of t to track_index
+        set year of t to year_number
         set fixed indexing to oldfi
     end tell
 end run

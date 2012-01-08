@@ -1,111 +1,107 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-##
-#Simple cue files parser
-#
-#To use call function parse(cue_file_pointer)
-#
-#@author: Daenoor <da3n00r@gmail.com>
-#@version: 1.0
-#@type module
- 
+# Parse cue sheet according to http://digitalx.org/cue-sheet/syntax/
+# Also module ignore empty lines and strip spaces and quotes.
+# Pregaps, postgaps, index, FILE and ISRC are parsed as strings.
+# Author: Kolesnichenko Ignat, email: ignat1990@gmail.com
+
+from util import run
+
+import os
 import string
+import shutil
+import itertools
 
-##
-#Split line of cue file into parts
-#@param line Line to split
-#@return list of parts 
-def _split(line):
-  fields = []
-  field = ""
-  quote = False
-  
-  for i in range(0, len(line)):
-    ch = line[i]
-    if ch in string.whitespace:
-      if quote:
-        field += ch
-      elif field:
-        fields.append(field)
-        field = ""
-    elif ch == '"':
-      if quote:
-        if i+1 < len(line) and line[i+1] == '"':
-          i += 1
-          field += ch
+def _parse_block(lines, keywords, process_rem_comment):
+    comment = "REM"
+    strip_symbols = " \"'"
+    keyword_dict = {}
+    for line in lines:
+        if not line: continue
+        keyword, value = line.split(" ", 1)
+        value = value.strip(strip_symbols)
+        # Case of comment
+        if keyword == comment:
+            if not process_rem_comment: continue
+            if "REM" not in keyword_dict:
+                keyword_dict["REM"] = {}
+            ok = False
+            if len(value.split()) > 1:
+                k, v = value.split(" ", 1)
+                if all(c in string.ascii_uppercase for c in k):
+                    keyword_dict["REM"][k] = v.strip(strip_symbols)
+                    ok = True
+            if not ok:
+                if None not in keyword_dict["REM"]:
+                    keyword_dict["REM"][None] = []
+                keyword_dict["REM"][None].append(value)
+        # Case of unknown keyword
+        elif keyword not in keywords:
+            print "Warning: cannot parse line '%s'" % line
         else:
-          quote = False
-      elif not field:
-        quote = True
-      else:
-        field += ch
-    else:
-      field += ch
-  if field:
-    fields.append(field)
-  
-  return fields
+            if keyword in keyword_dict:
+                keyword_dict[keyword] = [keyword_dict[keyword], value]
+            else:
+                keyword_dict[keyword] = value
+    return keyword_dict
 
-##
-#Splits cue into two parts: information about disk
-#and information about tracks
-#@param file: cue file pointer to parse
-#@return: two lists with cue parts 
-def getDiskInfo(cue_fp):
-  disk = []
-  tracks = []
-  diskScope = True
-  for line in cue_fp:
-    if line.find("TRACK") > 0:
-      diskScope = False
-      tracks.append(line.strip())
-    else:
-      if diskScope:
-        disk.append(line.strip())
-      else:
-        tracks.append(line.strip())
-  return [disk, tracks]
+def _parse_stream(cue_stream):
 
-##
-#Parses cue file
-#@param file: cue file pointer
-#@return: dictionary with cue information    
-def parse(cue_fp):
-  cue = {}
-  cue['tracks'] = []
-  
-  [disk, tracks] = getDiskInfo(cue_fp)
-  for line in disk:
-    fields = _split(line)
-    param = fields[0].upper()
-    if len(fields)>1:
-      if param == "PERFORMER":
-        cue['album_artist'] = fields[1]
-      elif param == "TITLE":
-        cue['album'] = fields[1]
-      elif param == "FILE":
-        cue['file'] = fields[1]
-      elif param == "CATALOG":
-        cue['catalog'] = fields[1]
-      elif param == "REM":
-        if len(fields)>2:
-          cue[fields[1].lower()] = ' '.join(fields[2:])
-  track = {}
-  for line in tracks:
-    fields = _split(line)
-    param = fields[0].upper()
-    if len(fields)>1:
-      if param == "TRACK":
-        if len(track):
-          cue['tracks'].append(track)
-        track = {}
-        track['number'] = fields[1]
-      elif param == "TITLE":
-        track['title'] = fields[1]
-      elif param == "PERFORMER":
-        track['artist'] = fields[1]
-  if len(track):
-    cue['tracks'].append(track)
-  return cue
+    track_keyword = "TRACK"
+    disk_keywords = ["PERFORMER", "TITLE", "CATALOG",
+                     "CDTEXTFILE", "FILE", "SONGWRITER"]
+    track_keywords = ["PERFORMER", "TITLE", "TRACK", "INDEX",
+                      "FLAGS", "ISRC", "PREGAP", "POSTGAP"]
 
+    cue = {}
+    lines = [line.strip() for line in cue_stream]
+    
+    # Splits cue file on lines about tracks and lines about disk.
+    # It is supposed that cue sheet contains only one FILE field
+    pred = lambda line: line.find(track_keyword) == -1
+    disk_info = list(itertools.takewhile(pred, lines))
+
+    cue["disk_info"] = _parse_block(disk_info, disk_keywords, True)
+    
+    cue["tracks"] = []
+    while True:
+        lines = list(itertools.dropwhile(pred, lines))
+        if not lines: break
+        track_block = [lines[0]]
+        lines = lines[1:]
+        track_block += list(itertools.takewhile(pred, lines))
+        cue["tracks"].append(_parse_block(track_block, track_keywords, False))
+
+    # Some handmade fixes
+    for track in cue["tracks"]:
+        number, track_type = track["TRACK"].split()
+        track["number"] = int(number)
+        track["type"] = track_type
+        del track["TRACK"]
+
+    return cue
+
+
+def parse(filename):
+    def detect_charset(filename):
+        stdout = run("file -I '%s'" % filename, True)
+        line = stdout.split("\n")[0]
+        index = line.find("charset")
+        if index == -1:
+            return None
+        return line[index:].split("=")[1].split()[0].strip(";")
+
+    def decode(filename, input_charset, output_charset):
+        tempfile = "/tmp/.iTunesLoader"
+        name, ext = os.path.splitext(filename)
+        run("iconv -f '%s' -t '%s' '%s' > '%s'" % (input_charset, output_charset, filename, tempfile))
+        shutil.move(tempfile, filename)
+
+    charset = detect_charset(filename)
+    if charset is not None and charset != "utf-8" and charset != "us-ascii" and charset != "ascii":
+        decode(filename, charset, "utf-8")
+    
+    with open(filename) as f:
+        cue = _parse_stream(f)
+    return cue

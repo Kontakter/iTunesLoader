@@ -6,12 +6,11 @@ Easy upload your lossless and mp3 music to iTunes in Mac OS.
 Installation
 ------------
 
-First yuou need to upload command line version of X Lossless Decoder.
+First you need to upload command line version of X Lossless Decoder.
 You can find it [here](http://tmkk.pv.land.to/xld/index_e.html).
 Don't forget to add it to your PATH variable.
 
-Also you need to install python library of [audiotools](http://audiotools.sourceforge.net/)
-It is required for process cue sheets.
+Also you neeg ffmpeg and cuetools. You download it with [mac ports](http://guide.macports.org/)
 
 Usage
 -----

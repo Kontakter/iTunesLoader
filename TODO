@@ -1,2 +1,3 @@
-1. Exclude XLD beacause of absent UTF-8 support
-2. Exclude audiotools, use simple parser
+1. Improve english
+2. Make this script more userfriendly
+3. Support all possible formats

@@ -10,7 +10,7 @@ First you need to upload command line version of X Lossless Decoder.
 You can find it [here](http://tmkk.pv.land.to/xld/index_e.html).
 Don't forget to add it to your PATH variable.
 
-Also you neeg ffmpeg and cuetools. You download it with [mac ports](http://guide.macports.org/)
+Also you neeg ffmpeg and cuetools. You can download it with [mac ports](http://guide.macports.org/)
 
 Usage
 -----

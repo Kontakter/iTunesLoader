@@ -87,7 +87,6 @@ def process_dir(files, only_add, delete, ignore_cue):
 
     extensions = [extract_extension(f) for f in files]
     audio_files = filter(lambda f: extract_extension(f) in AUDIO_EXT, files)
-    print "AUDIO FILES", audio_files
     audio_ext = set(filter(AUDIO_EXT.__contains__, extensions))
     playlist_ext = filter(PLAYLIST_EXT.__contains__, extensions)
     if len(audio_ext) != 1:
@@ -138,9 +137,8 @@ if __name__ == "__main__":
     parser = optparse.OptionParser(
         description="Convert audio and add to iTunes."
                     "Supported formats: flac, m4a, mp3, ape."
-                    "Also cue playlists are supported.")
-    parser.add_option("--path,-p", type=str, dest="path",
-                      help="Path to folder with album. It is required.")
+                    "Also cue playlists are supported."
+                    "There is one required parametr: path to folder with album")
     parser.add_option("--delete,-d", action="store_true", dest="delete", default=False,
                       help="Set this option for deletion old file in conversion case.")
     parser.add_option("--only-add, -o", dest="only_add",
@@ -151,11 +149,11 @@ if __name__ == "__main__":
                       help="Ignore all cue files.")
     (options, args) = parser.parse_args()
 
-    if not options.path:
+    if len(args) != 1:
         parser.print_help()
         exit()
 
-    options.path = os.path.abspath(options.path)
+    options.path = os.path.abspath(args[0])
     for path, files in walk_audiofiles(options.path):
         with Enter(options.path, path) as _:
             if not files:
